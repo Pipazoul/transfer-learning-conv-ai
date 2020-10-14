@@ -16,6 +16,33 @@ from transformers import OpenAIGPTLMHeadModel, OpenAIGPTTokenizer, GPT2LMHeadMod
 from train import SPECIAL_TOKENS, build_input_from_segments, add_special_tokens_
 from utils import get_dataset, download_pretrained_model
 
+from flask import Flask, render_template, request
+from flask_cors import CORS
+import json 
+app = Flask(__name__)
+CORS(app)
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from io import BytesIO
+from chatterbot import ChatBot
+import subprocess
+from gtts import gTTS
+from playsound import playsound
+import speech_recognition as sr  
+
+# obtain audio from the microphone  
+r = sr.Recognizer()  
+with sr.Microphone() as source:  
+    print("Please wait. Calibrating microphone...")  
+    # listen for 5 seconds and create the ambient noise energy level  
+    r.adjust_for_ambient_noise(source, duration=5)  
+    r.dynamic_energy_threshold = True
+    r.dynamic_energy_adjustment_damping = 0.05
+    r.pause_threshold = 0.5 # type: float
+    r.record(source, 3)
+    
+   
+
+
 def top_filtering(logits, top_k=0., top_p=0.9, threshold=-float('Inf'), filter_value=-float('Inf')):
     """ Filter a distribution of logits using top-k, top-p (nucleus) and/or threshold filtering
         Args:
@@ -134,10 +161,46 @@ def run():
     personalities = [dialog["personality"] for dataset in dataset.values() for dialog in dataset]
     personality = random.choice(personalities)
     logger.info("Selected personality: %s", tokenizer.decode(chain(*personality)))
+    tts = gTTS(tokenizer.decode(chain(*personality)))
+    tts.save('out.mp3')
+    playsound('out.mp3')
+
+
+    # YASSIN
+
+    @app.route('/<string:page_name>/')
+    def render_static(page_name):
+        return render_template('%s.html' % page_name)
+
+    @app.route('/api/chat',methods = ['POST', 'GET'])
+    def result():
+        if request.method == 'POST':
+            message = request.form.to_dict()
+            message = message["message"]
+            print(message)
+
+      
 
     history = []
     while True:
-        raw_text = input(">>> ")
+        #raw_text = input(">>> ")
+        print("Say something!")  
+        with sr.Microphone() as source:  
+            audio = r.listen(source)
+            GOOGLE_CLOUD_SPEECH_CREDENTIALS = r"""{json_google_credentials}"""
+            try:
+            # for testing purposes, we're just using the default API key
+            # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
+
+            
+            # instead of `r.recognize_google(audio)`
+                raw_text = r.recognize_google_cloud(audio, credentials_json=GOOGLE_CLOUD_SPEECH_CREDENTIALS)
+                print("Google Cloud Speech thinks you said " + raw_text)
+            except sr.UnknownValueError:
+                print("Google Speech Recognition could not understand audio")
+            except sr.RequestError as e:
+                print("Could not request results from Google Speech Recognition service; {0}".format(e))
+        
         while not raw_text:
             print('Prompt should not be empty!')
             raw_text = input(">>> ")
@@ -148,7 +211,13 @@ def run():
         history = history[-(2*args.max_history+1):]
         out_text = tokenizer.decode(out_ids, skip_special_tokens=True)
         print(out_text)
-
+        tts = gTTS(out_text)
+        tts.save('out.mp3')
+        playsound('out.mp3')
+        #subprocess.call(["espeak", "-ven+m1","-p", "50","-s", "140", str(out_text)])
 
 if __name__ == "__main__":
     run()
+    app.run(debug = True)
+
+
